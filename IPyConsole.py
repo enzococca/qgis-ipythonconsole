@@ -28,15 +28,19 @@ __copyright__ = '(C) 2015-2020, Alessandro Pasotti'
 
 
 # Import the PyQt and QGIS libraries
-from qgis.core import Qgis
+
 from qgis.PyQt.QtCore import *
 from qgis.PyQt.QtGui import *
 from qgis.PyQt.QtWidgets import *
 from qgis.PyQt import uic
+
+from aenum import unicode
+from qtconsole import completion_plain as text
+
 os.environ['QT_API'] = 'pyqt5'
 
 
-from qgis.core import *
+
 from .propertize import propertize
 
 PLUGIN_DOMAIN = "IPyConsole"
@@ -99,7 +103,7 @@ class IPyConsole:
             else:
                 self.default()
 
-    def initGui(self):
+    def initGui(self) -> None:
         # Create action that will start plugin
         current_directory = os.path.dirname(
             os.path.abspath(inspect.getfile(inspect.currentframe())))
@@ -109,17 +113,30 @@ class IPyConsole:
                                      _tr("&Docked"), self.iface.mainWindow())
         self.windowed_action = QAction(QIcon(os.path.join(current_directory, "icons", "icon.png")),
                                        _tr("&Windowed"), self.iface.mainWindow())
+        #modifica enzo
+        self.load_notebook_action = QAction(QIcon(os.path.join(current_directory, "icons", "notebook.png")),
+                                            _tr("&Load Jupyter Notebook"), self.iface.mainWindow())
+
         self.settings_action = QAction(QIcon(os.path.join(current_directory, "icons", "settings.svg")),
                                        _tr("&Settings"), self.iface.mainWindow())
+
+
 
         # connect the actions to the methods
         self.docked_action.triggered.connect(self.docked)
         self.windowed_action.triggered.connect(self.windowed)
         self.default_action.triggered.connect(self.default)
+        self.load_notebook_action.triggered.connect(self.load_notebook)
         self.settings_action.triggered.connect(self.show_settings)
+
 
         # Add toolbar button
         self.iface.addToolBarIcon(self.default_action)
+        # Aggiungi l'azione per caricare notebook
+
+
+
+
 
         # Build menu
         self.menu = QMenu(_tr("&IPython QGIS Console"))
@@ -128,12 +145,16 @@ class IPyConsole:
         self.menu.addActions(
             [self.docked_action, self.windowed_action, self.settings_action])
         self.iface.pluginMenu().addMenu(self.menu)
+        self.menu.addSeparator()  # Aggiungi un separatore per organizzazione
+        self.menu.addAction(self.load_notebook_action)
 
     def unload(self):
         # Remove the plugin menu item and icon
         self.iface.removePluginMenu("IPyConsole", self.docked_action)
         self.iface.removePluginMenu("IPyConsole", self.windowed_action)
         self.iface.removePluginMenu("IPyConsole", self.settings_action)
+        self.iface.removePluginMenu("IPyConsole", self.load_notebook_action)
+
         self.iface.removeToolBarIcon(self.default_action)
         if hasattr(self, 'dock') and self.dock is not None:
             self.dock.close()
@@ -259,6 +280,46 @@ class IPyConsole:
             return
         self.settings.sync()
 
+    def load_notebook(self):
+        if self.control is None:
+            # Se la console non è aperta, aprila
+            self.default()
+
+        # Apri il dialogo di selezione file
+        file_path, _ = QFileDialog.getOpenFileName(
+            self.iface.mainWindow(),
+            _tr("Load Jupyter Notebook"),
+            "",
+            _tr("Jupyter Notebooks (*.ipynb);;All files (*.*)")
+        )
+
+        if file_path:
+            try:
+                # Usa nbformat per leggere il notebook
+                import nbformat
+                from qtconsole.qtconsoleapp import JupyterQtConsoleApp
+
+                # Carica il notebook
+                notebook = nbformat.read(file_path, as_version=4)
+
+                # Esegui ogni cella del notebook
+                for cell in notebook.cells:
+                    if cell.cell_type == 'code':
+                        self.control.kernel_client.execute(cell.source)
+
+                QMessageBox.information(
+                    self.iface.mainWindow(),
+                    _tr("Success"),
+                    _tr("Notebook loaded successfully!")
+                )
+
+            except Exception as e:
+                QMessageBox.critical(
+                    self.iface.mainWindow(),
+                    _tr("Error"),
+                    _tr("Error loading notebook: {}").format(str(e))
+                )
+
     # run
     def run(self, dock=False, theme='light'):
         # Checks if a console is open
@@ -278,7 +339,7 @@ class IPyConsole:
         try:
             from qtconsole.rich_jupyter_widget import RichJupyterWidget
         except ImportError as e:
-            error_message = _tr('You need to install <b>Jupyter 1.0.0</b> (and then restart QGIS) before running this <b>IPyConsole</b> plugin.<br>IPython can be installed with <code>pip install jupyter==1.0.0</code>. More informations about IPython installation on <a href="https://ipython.org/install.html">https://ipython.org/install.html</a>. Windows users might need to run the commands as admin in the OSGEO Command Shell.<br>The exception message is: %s') % e
+            error_message = _tr('You need to install <b>Jupyter 1.1.1</b> (and then restart QGIS) before running this <b>IPyConsole</b> plugin.<br>IPython can be installed with <code>pip install jupyter==1.0.0</code>. More informations about IPython installation on <a href="https://ipython.org/install.html">https://ipython.org/install.html</a>. Windows users might need to run the commands as admin in the OSGEO Command Shell.<br>The exception message is: %s') % e
             QMessageBox.information(
                 self.iface.mainWindow(), _tr(u'Error'), error_message)
 
@@ -327,6 +388,8 @@ class IPyConsole:
 
          # or RichJupyterWidget
         class myWidget(RichJupyterWidget):
+
+
             def closeEvent(self, event):
                 stop()
                 event.accept()
@@ -419,7 +482,8 @@ class IPyConsole:
             """As the name suggests... dynamic column number: stock
             qtconsole doesn't resize its column number on window
             resize but sticks to 80"""
-            from qtconsole.completion_plain import text
+
+
             old_columnize = text.columnize
 
             def new_columnize(items, separator='  ', displaywidth=80):
